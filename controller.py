@@ -70,11 +70,12 @@ class Blended_PID_Controller():
         self.mu = 0.5
         self.sigma = 0.1
         self.blendDist = stats.truncnorm((lower - self.mu) / self.sigma, (upper - self.mu) / self.sigma, loc=self.mu, scale=self.sigma)
-
+        self.trackingAccuracy = 0.5
         self.thread_object = None
         self.target = [0,0,0]
         self.yaw_target = 0.0
         self.run = True
+        self.setController("Uniform")
 
     def wrap_angle(self,val):
         return( ( val + np.pi) % (2 * np.pi ) - np.pi )
@@ -95,12 +96,18 @@ class Blended_PID_Controller():
         self.blendDist = stats.truncnorm((lower - self.mu) / self.sigma, (upper - self.mu) / self.sigma, loc=self.mu,
                                          scale=self.sigma)
 
+    def getUniformBlend(self):
+        self.current_blend = np.random.uniform(0, 1, 3)
+        return self.current_blend
+
     def nextBlendWeight(self):
         self.current_blend = self.blendDist.rvs(size=3)
         #self.current_blend = np.random.uniform(0,1,3)
         #print("Blends from dist: " + str(self.current_blend))
+
     def getBlendWeight(self):
         return self.current_blend
+
     def getBlends(self):
         return self.blends
 
@@ -116,7 +123,7 @@ class Blended_PID_Controller():
 
     def update(self):
         self.total_steps += 1
-        self.nextBlendWeight()
+
         [dest_x,dest_y,dest_z] = self.target
         [x,y,z,x_dot,y_dot,z_dot,theta,phi,gamma,theta_dot,phi_dot,gamma_dot] = self.get_state(self.quad_identifier)
         x_error = dest_x-x
@@ -168,38 +175,51 @@ class Blended_PID_Controller():
         z_val2 = self.ANGULAR_P2[2] * (gamma_dot_error) + self.gammai_term2
         z_val2 = np.clip(z_val2, self.YAW_CONTROL_LIMITS[0], self.YAW_CONTROL_LIMITS[1])
 
-        # self.current_obs["phi_C1"] = y_val
-        # self.current_obs["phi_C2"] = y_val2
-        # self.current_obs["theta_C1"] = x_val
-        # self.current_obs["theta_C2"] = x_val2
-
+        #calculate motor commands depending on controller selection
+        if(self.controller == "C1"):
+            m1 = throttle + x_val + z_val
+            m2 = throttle + y_val - z_val
+            m3 = throttle - x_val + z_val
+            m4 = throttle - y_val - z_val
+        elif(self.controller == "C2"):
+            m1 = throttle + x_val2 + z_val2
+            m2 = throttle + y_val2 - z_val2
+            m3 = throttle - x_val2 + z_val2
+            m4 = throttle - y_val2 - z_val2
 
         # blended controller
-        blend_weight = self.getBlendWeight()
-        x_val_blend = x_val2 * blend_weight[0] + x_val * (1 - blend_weight[0])
-        y_val_blend = y_val2 * blend_weight[1] + y_val * (1 - blend_weight[1])
-        z_val_blend = z_val2 * blend_weight[2] + z_val * (1 - blend_weight[2])
-        self.blends.append(blend_weight)
-
+        elif(self.controller == "Uniform"):
+            blend_weight = self.getUniformBlend()
+            x_val_blend = x_val2 * blend_weight[0] + x_val * (1 - blend_weight[0])
+            y_val_blend = y_val2 * blend_weight[1] + y_val * (1 - blend_weight[1])
+            z_val_blend = z_val2 * blend_weight[2] + z_val * (1 - blend_weight[2])
+            self.blends.append(blend_weight)
+            m1 = throttle + x_val_blend + z_val_blend
+            m2 = throttle + y_val_blend - z_val_blend
+            m3 = throttle - x_val_blend + z_val_blend
+            m4 = throttle - y_val_blend - z_val_blend
+        elif(self.controller == "Agent"):
+            self.nextBlendWeight()
+            blend_weight = self.getBlendWeight()
+            x_val_blend = x_val2 * blend_weight[0] + x_val * (1 - blend_weight[0])
+            y_val_blend = y_val2 * blend_weight[1] + y_val * (1 - blend_weight[1])
+            z_val_blend = z_val2 * blend_weight[2] + z_val * (1 - blend_weight[2])
+            self.blends.append(blend_weight)
+            m1 = throttle + x_val_blend + z_val_blend
+            m2 = throttle + y_val_blend - z_val_blend
+            m3 = throttle - x_val_blend + z_val_blend
+            m4 = throttle - y_val_blend - z_val_blend
+        else:
+            print("No control architecture selected")
+            m1 = throttle + x_val + z_val
+            m2 = throttle + y_val - z_val
+            m3 = throttle - x_val + z_val
+            m4 = throttle - y_val - z_val
         #print("X_val 1 =" + str(x_val) + " 2= " +  str(x_val2 ) + " blended = " + str(x_val_blend))
         #print("Y_val 1 =" +  str(y_val) + " 2= " +  str(y_val2 )+ " blended = " + str(y_val_blend))
         #print("Z_val 1 =" +  str(z_val) + " 2= " +  str(z_val2) + " blended = " + str(z_val_blend))
 
 
-        # m1 = throttle + x_val + z_val
-        # m2 = throttle + y_val - z_val
-        # m3 = throttle - x_val + z_val
-        # m4 = throttle - y_val- z_val
-
-        m1 = throttle + x_val2 + z_val2
-        m2 = throttle + y_val2 - z_val2
-        m3 = throttle - x_val2 + z_val2
-        m4 = throttle - y_val2 - z_val2
-
-        # m1 = throttle + x_val_blend + z_val_blend
-        # m2 = throttle + y_val_blend - z_val_blend
-        # m3 = throttle - x_val_blend + z_val_blend
-        # m4 = throttle - y_val_blend - z_val_blend
        # [m1, m2, m3, m4] = self.getMotorCommands()
         M = np.clip([m1,m2,m3,m4],self.MOTOR_LIMITS[0],self.MOTOR_LIMITS[1])
 
@@ -353,7 +373,7 @@ class Blended_PID_Controller():
         z_error = dest_z - z
         total_distance_to_goal = abs(x_error) + abs(y_error) + abs(z_error)
 
-        isAt = True if total_distance_to_goal < 0.5 else False
+        isAt = True if total_distance_to_goal < self.trackingAccuracy else False
         return isAt
 
     def isDone(self):
@@ -361,7 +381,7 @@ class Blended_PID_Controller():
         total_distance_to_goal = abs(self.current_obs["x_err"]) + abs(self.current_obs["y_err"])+abs(self.current_obs["z_err"])
        # print("Z- error : "+ str(abs(self.current_obs["z_err"])))
         #print(str(total_distance_to_goal) + "from goal :" + str(self.target))
-        atGoal = True if total_distance_to_goal < 0.5 else False
+        atGoal = True if total_distance_to_goal < self.trackingAccuracy else False
         #or is to far away
         toFar = True if total_distance_to_goal > 50 else False
         toLong = True if self.total_steps > 10000 else False
@@ -382,23 +402,17 @@ class Blended_PID_Controller():
 
     def getReward(self):
 
-        self.avg_target_times = [426,1014,1839,2450,3127,3739,4320]
+       # self.avg_target_times = [426,1014,1839,2450,3127,3739,4320]
         #average time to reach a waypoint with no faults
         #threshold = 100
 
         total_distance_to_goal = abs(self.current_obs["x_err"]) + abs(self.current_obs["y_err"]) + abs(
             self.current_obs["z_err"])
-        atGoal = True if total_distance_to_goal < 0.5 else False
-        toLong = True if self.total_steps > 10000 else False
-        reward = 0
+        atGoal = True if total_distance_to_goal < self.trackingAccuracy else False
+        toLong = True if self.total_steps > 30000 else False
+        reward = -(total_distance_to_goal)
         if (atGoal):
-
-            diff_to_optimal = self.avg_target_times[self.current_waypoint] - self.total_steps
-            if(diff_to_optimal > 0):
-                #performed better than optmial nominal time
-                reward = diff_to_optimal
-            else:
-                reward = -diff_to_optimal
+            reward = 100
 
         if (toLong):
             reward = -10000
@@ -485,3 +499,13 @@ class Blended_PID_Controller():
 
     def getTotalSteps(self):
         return self.total_steps
+
+    def setController(self,ctrl):
+        if(ctrl == "C1"):
+            self.controller = "C1"
+        elif(ctrl == "C2"):
+            self.controller = "C2"
+        elif ( ctrl == "Uniform"):
+            self.controller = "Uniform"
+        else:
+            self.controller = "Agent"

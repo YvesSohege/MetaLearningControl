@@ -56,7 +56,7 @@ class Quad_Env(gym.Env):
                                                       self.quad.set_motor_speeds, self.quad.get_motor_speeds,
                                                       self.quad.stepQuad, self.quad.set_motor_faults,
                                                       params=BLENDED_CONTROLLER_PARAMETERS, quad_identifier=str(self.quad_id))
-
+        self.ctrl.setController("Agent")
         self.current = 0
         self.ctrl.update_target(goals[0])
         self.setRandomFault()
@@ -118,6 +118,7 @@ class Quad_Env(gym.Env):
                                                       self.quad.stepQuad, self.quad.set_motor_faults,
                                                       params=BLENDED_CONTROLLER_PARAMETERS, quad_identifier=str(self.quad_id))
 
+        self.ctrl.setController("Agent")
         self.current = 0
         self.ctrl.update_target(goals[0])
         #print(type(self.quad.get_state("q1")))
