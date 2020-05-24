@@ -18,15 +18,28 @@ BLENDED_CONTROLLER_PARAMETERS = {'Motor_limits': [0, 9000],
                          }
 
 #original angular rate = {'P': [22000, 22000, 1500], 'I': [0, 0, 1.2], 'D': [12000, 12000, 0]}
-steps = 7
-x_path = [0, 5, 0, -5, 0, 5, 0]
-y_path = [0, 0, 5, 0, -5, 0, 0]
-z_path = [5, 5, 5, 5, 5, 5, 5]
-
+stepsToGoal = 0
+steps = 8
+x_path = [0, 0, 5, 0, -5, 0, 5, 0]
+y_path = [0, 0, 0, 5, 0, -5, 0, 0]
+z_path = [0, 5, 5, 5, 5, 5, 5, 5]
+interval_steps = 50
 yaws = np.zeros(steps)
 goals = []
-for i in range(steps):
+safe_region = []
+for i in range(steps-1):
+
+    #create linespace between waypoint i and i+1
+    x_lin = np.linspace(x_path[i], x_path[i+1], interval_steps)
+    y_lin =  np.linspace(y_path[i], y_path[i+1], interval_steps)
+    z_lin =  np.linspace(z_path[i], z_path[i+1], interval_steps)
     goals.append([x_path[i], y_path[i], z_path[i]])
+    #for each pos in linespace append a goal
+    safe_region.append([])
+    for j in range(interval_steps):
+        safe_region[i].append([x_lin[j], y_lin[j], z_lin[j]])
+        stepsToGoal +=1
+
 
 
 
@@ -58,9 +71,11 @@ class Quad_Env(gym.Env):
                                                       params=BLENDED_CONTROLLER_PARAMETERS, quad_identifier=str(self.quad_id))
         self.ctrl.setController("Agent")
         self.current = 0
-        self.ctrl.update_target(goals[0])
+        self.ctrl.update_target(goals[self.current], safe_region[self.current])
         self.setRandomFault()
 
+
+        self.cumu_reward= 0
         # Define action and observation space
         # They must be gym.spaces objects
         # Example when using discrete actions, we have two: left and right
@@ -120,9 +135,11 @@ class Quad_Env(gym.Env):
 
         self.ctrl.setController("Agent")
         self.current = 0
-        self.ctrl.update_target(goals[0])
+        self.ctrl.update_target(goals[self.current], safe_region[self.current])
         #print(type(self.quad.get_state("q1")))
         self.setRandomFault()
+        self.cumu_reward = 0
+
         obs = self.ctrl.get_updated_observations()
         obs_array = []
         for key, value in obs.items():
@@ -140,29 +157,25 @@ class Quad_Env(gym.Env):
         # obs = ctrl.set_action([mu, sigma])
 
         done = False
-        failed = False
+
         if (self.ctrl.isAtPos(goals[self.current])):
             self.current += 1
             if (self.current < len(goals)):
-                self.ctrl.update_target(goals[self.current])
+                self.ctrl.update_target(goals[self.current], safe_region[self.current-1])
             else:
                 print("No more targets")
                 done = True
-
-        if self.ctrl.getTotalSteps() > 10000:
-            done = True
-            failed = True
-            print("Failed")
 
 
 
         # Null reward everywhere except when reaching the goal (left of the grid)
         reward = self.ctrl.getReward()
+        self.cumu_reward += reward
+        if reward <= -10000:
+            done = True
 
-        # if(failed):
-        #     reward = -100
         if(done):
-            print("Ep done " +str(reward))
+            print("Ep done - Accumulated Reward = " +str(self.cumu_reward))
         # Optionally we can pass additional info, we are not using that for now
         info = {}
         #self.render()

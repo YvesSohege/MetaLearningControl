@@ -66,6 +66,13 @@ class Blended_PID_Controller():
         self.blends = [0]
         self.current_blend = [0,0,0]
         self.current_waypoint = -1
+
+        self.safe_bound = []
+        self.time_outside_safety = 0
+        self.total_time_outside_safety = 0
+        self.current_distance_to_opt = 0
+        self.safety_margin = 1
+
         lower, upper = 0, 1
         self.mu = 0.5
         self.sigma = 0.1
@@ -76,6 +83,9 @@ class Blended_PID_Controller():
         self.yaw_target = 0.0
         self.run = True
         self.setController("Uniform")
+
+        self.min_distances_points= []
+        self.min_distances = []
 
     def wrap_angle(self,val):
         return( ( val + np.pi) % (2 * np.pi ) - np.pi )
@@ -123,6 +133,8 @@ class Blended_PID_Controller():
 
     def update(self):
         self.total_steps += 1
+
+        self.checkSafetyBound()
 
         [dest_x,dest_y,dest_z] = self.target
         [x,y,z,x_dot,y_dot,z_dot,theta,phi,gamma,theta_dot,phi_dot,gamma_dot] = self.get_state(self.quad_identifier)
@@ -257,10 +269,22 @@ class Blended_PID_Controller():
 
 
 
-    def update_target(self,target):
+    def update_target(self,target,new_safety_bound):
         self.current_waypoint +=1
         self.target = target
+        self.safe_bound = new_safety_bound
+        self.total_time_outside_safety += self.time_outside_safety
+        self.time_outside_safety = 0
+        self.current_distance_to_opt = self.getDistanceToOpt()
 
+    def getCurrentSafeBounds(self):
+        return self.safe_bound
+
+    def getLatestMinDistPoint(self):
+        return self.min_distances_points[-1]
+
+    def getLatestMinDist(self):
+        return self.min_distances[-1]
     def update_yaw_target(self,target):
         self.yaw_target = self.wrap_angle(target)
 
@@ -374,6 +398,7 @@ class Blended_PID_Controller():
         total_distance_to_goal = abs(x_error) + abs(y_error) + abs(z_error)
 
         isAt = True if total_distance_to_goal < self.trackingAccuracy else False
+
         return isAt
 
     def isDone(self):
@@ -400,21 +425,58 @@ class Blended_PID_Controller():
 
         return done
 
+    def getDistanceToOpt(self):
+
+        #get closest point on the linspace between waypoints
+        [x, y, z, x_dot, y_dot, z_dot, theta, phi, gamma, theta_dot, phi_dot, gamma_dot] = self.get_state(
+            self.quad_identifier)
+
+        p1 =[x,y,z]
+        distances = []
+        points = []
+        for i in range(len(self.safe_bound)):
+
+            p2 = np.array([self.safe_bound[i][0], self.safe_bound[i][1], self.safe_bound[i][2]])
+            squared_dist = np.sum((p1 - p2) ** 2, axis=0)
+            dist = np.sqrt(squared_dist)
+            distances.append(dist)
+            points.append(p2)
+            #print(str(self.safe_bound[i]) +" "+ str(dist))
+
+        i = np.where(distances == np.amin(distances))
+        index = i[0][0]
+        #print("min pos index" + str(index) + " dist " + str(distances[index]) + " point " + str(points[index]))
+        self.min_distances_points.append(points[index] )
+        self.min_distances.append(distances[index])
+       # print("min dist point : " +  str(min_dist_point))
+        return distances[index]
+
+    def getMinDistances(self):
+        return self.min_distances
+
+    def checkSafetyBound(self):
+        self.current_distance_to_opt = self.getDistanceToOpt()
+        if  self.current_distance_to_opt > self.safety_margin :
+            #increase total time outside safety bound by 1 ( calculated per step)
+            self.time_outside_safety += 1
+            self.outsideBounds = True
+        else:
+            self.time_outside_safety = 0
+            self.outsideBounds = False
+
+        return
+
+
     def getReward(self):
+        end_threshold = 2000
+        if (self.outsideBounds):
+            #left safety region give negative reward
+            reward = - self.current_distance_to_opt
+        else:
+            reward = 1
 
-       # self.avg_target_times = [426,1014,1839,2450,3127,3739,4320]
-        #average time to reach a waypoint with no faults
-        #threshold = 100
-
-        total_distance_to_goal = abs(self.current_obs["x_err"]) + abs(self.current_obs["y_err"]) + abs(
-            self.current_obs["z_err"])
-        atGoal = True if total_distance_to_goal < self.trackingAccuracy else False
-        toLong = True if self.total_steps > 30000 else False
-        reward = -(total_distance_to_goal)
-        if (atGoal):
-            reward = 100
-
-        if (toLong):
+        if(self.time_outside_safety > end_threshold):
+            print("Failed")
             reward = -10000
 
         return reward

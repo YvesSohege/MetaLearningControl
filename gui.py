@@ -6,9 +6,10 @@ import sys
 
 class GUI():
     # 'quad_list' is a dictionary of format: quad_list = {'quad_1_name':{'position':quad_1_position,'orientation':quad_1_orientation,'arm_span':quad_1_arm_span}, ...}
-    def __init__(self, quads):
+    def __init__(self, quads, ctrl):
         self.quads = quads
         self.pos = []
+        self.ctrl = ctrl
         self.fig = plt.figure()
         self.ax = Axes3D.Axes3D(self.fig)
         self.ax.set_xlim3d([-10.0, 10.0])
@@ -19,8 +20,9 @@ class GUI():
         self.ax.set_zlabel('Z')
         self.ax.set_title('Quadcopter Simulation')
         self.init_plot()
+        self.currentPoints = []
         self.fig.canvas.mpl_connect('key_press_event', self.keypress_routine)
-
+        self.scatter = 0
     def rotation_matrix(self,angles):
         ct = math.cos(angles[0])
         cp = math.cos(angles[1])
@@ -59,7 +61,20 @@ class GUI():
                              self.quads[key]['position'][1],
                              self.quads[key]['position'][2]])
         self.updateLine()
+        #self.showPathToGoal()
+        self.addMinDistLine()
         plt.pause(0.000000000000001)
+
+    def addMinDistLine(self):
+        p2 = self.ctrl.getLatestMinDistPoint()
+
+        x_c1 = [p2[0] , self.pos[-1][0]]
+        y_c1 = [p2[1], self.pos[-1][1]]
+        z_c1 = [p2[2], self.pos[-1][2]]
+        c = "k"
+        if self.ctrl.getLatestMinDist() > 1:
+            c = "r"
+        self.ax.plot3D(x_c1, y_c1, z_c1, linewidth=1, c=c)
 
     def updateLine(self):
         x_c1 = []
@@ -72,6 +87,27 @@ class GUI():
             z_c1.append(self.pos[i][2])
 
         self.ax.plot3D(x_c1,y_c1,z_c1,linewidth=1, c="b")
+
+    def showPathToGoal(self):
+
+        path = self.ctrl.getCurrentSafeBounds()
+
+        for i in range(len(path)):
+            pos = path[i]
+            self.ax.scatter(pos[0], pos[1], pos[2], c="g")
+
+
+    def show(self):
+        x_c1 = []
+        y_c1 = []
+        z_c1 = []
+
+        for i in range(len(self.pos)):
+            x_c1.append(self.pos[i][0])
+            y_c1.append(self.pos[i][1])
+            z_c1.append(self.pos[i][2])
+
+        self.ax.plot3D(x_c1, y_c1, z_c1, linewidth=1, c="b")
 
     def keypress_routine(self,event):
         sys.stdout.flush()
@@ -95,3 +131,6 @@ class GUI():
             x[0] -= 0.2
             x[1] -= 0.2
             self.ax.set_xlim3d(x)
+    def close(self):
+
+        plt.close(self.fig)
