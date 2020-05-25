@@ -1,8 +1,6 @@
-import quadcopter,controller
+from MetaLearningControl import quadcopter,controller,gui
 import numpy as np
-import matplotlib.pyplot as plt
-import mpl_toolkits.mplot3d.axes3d as Axes3D
-import gui
+
 
 BLENDED_CONTROLLER_PARAMETERS = {'Motor_limits': [0, 9000],
                          'Tilt_limits': [-10, 10],
