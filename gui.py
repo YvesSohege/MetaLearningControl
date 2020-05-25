@@ -60,10 +60,10 @@ class GUI():
             self.pos.append([self.quads[key]['position'][0],
                              self.quads[key]['position'][1],
                              self.quads[key]['position'][2]])
-        self.updateLine()
-        print("gui executing update")
+        #self.updateLine()
+
         #self.showPathToGoal()
-        self.addMinDistLine()
+       # self.addMinDistLine()
         plt.pause(0.000000000000001)
 
     def addMinDistLine(self):
