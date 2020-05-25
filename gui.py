@@ -61,6 +61,7 @@ class GUI():
                              self.quads[key]['position'][1],
                              self.quads[key]['position'][2]])
         self.updateLine()
+        print("gui executing update")
         #self.showPathToGoal()
         self.addMinDistLine()
         plt.pause(0.000000000000001)
